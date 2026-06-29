@@ -1,6 +1,6 @@
 ﻿namespace Whaledevelop.UI
 {
-    public interface IUIViewModel
+    public interface IUIViewModel : ISyncLifetime
     {
     }
 }

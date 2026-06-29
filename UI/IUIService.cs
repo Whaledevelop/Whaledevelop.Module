@@ -1,17 +1,14 @@
-﻿using UnityEngine;
 using Whaledevelop.Services;
 
 namespace Whaledevelop.UI
 {
-    public interface IUIService : IService
+    public interface IUIService<TEnum> : IService where TEnum : struct
     {
-        bool TryGetModel<T>(out T model)
-            where T : IUIViewModel;
+        bool TryGetModel<TModel>(TEnum code, out TModel viewModel) where TModel : IUIViewModel;
 
-        void OpenView(UIView viewPrefab, IUIViewModel viewModel);
+        bool TryOpenView<TModel, TView>(TEnum code, TModel model)
+            where TModel : IUIViewModel where TView : IUIView<TModel>;
 
-        void CloseView(IUIViewModel viewModel);
-        
-        RectTransform CanvasRectTransform { get; }
+        bool TryClose<TModel, TView>(TEnum code) where TModel : IUIViewModel where TView : IUIView<TModel>;
     }
 }

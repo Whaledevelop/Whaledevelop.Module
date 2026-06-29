@@ -1,44 +1,77 @@
 ﻿using System;
 using System.Threading;
 using Cysharp.Threading.Tasks;
-using UnityEngine;
 
-namespace Whaledevelop
+namespace QuizRPG.Utility
 {
     public static class UniTaskUtility
     {
-        public static void ExecuteAfterSeconds(float seconds, Action callback, CancellationToken cancellationToken = default)
+        public static async UniTask<T> WaitCompletionAsync<T>(UniTaskCompletionSource<T> completionSource, CancellationToken cancellationToken, Action callback = null)
         {
-            DelayAndInvoke(seconds, callback, cancellationToken).Forget();
-        }
-
-        public static void ExecuteAfterFrames(int frameCount, Action callback, CancellationToken cancellationToken = default)
-        {
-            DelayFramesAndInvoke(frameCount, callback, cancellationToken).Forget();
-        }
-
-        private static async UniTaskVoid DelayAndInvoke(float seconds, Action callback, CancellationToken cancellationToken)
-        {
+            await using var registration = cancellationToken.Register(() => completionSource.TrySetCanceled());
             try
             {
-                await UniTask.Delay(TimeSpan.FromSeconds(seconds), cancellationToken: cancellationToken);
-                callback?.Invoke();
+                var result = await completionSource.Task;
+                
+                return result;
             }
-            catch (OperationCanceledException)
+            finally
             {
+                callback?.Invoke();
+                await registration.DisposeAsync();
             }
         }
-
-        private static async UniTaskVoid DelayFramesAndInvoke(int frameCount, Action callback, CancellationToken cancellationToken)
+        
+        public static CancellationTokenSource StartTask(UniTask task, Action onComplete, CancellationToken cancellationToken)
         {
-            try
+            var cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            UniTask.Void(async () =>
             {
-                await UniTask.DelayFrame(frameCount, PlayerLoopTiming.Update, cancellationToken);
-                callback?.Invoke();
-            }
-            catch (OperationCanceledException)
+                try
+                {
+                    await task.AttachExternalCancellation(cancellationTokenSource.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+
+                if (cancellationTokenSource.IsCancellationRequested)
+                {
+                    return;
+                }
+                onComplete?.Invoke();
+            });
+            return cancellationTokenSource;
+        }
+
+        public static void ExecuteAfterFrames(int frames, Action onComplete, CancellationToken cancellationToken = default)
+        {
+            UniTask.Void(async () =>
             {
-            }
+                await UniTask.DelayFrame(frames, cancellationToken: cancellationToken);
+
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                onComplete.Invoke();
+            });
+        }
+        
+        public static void ExecuteAfterSeconds(float seconds, Action onComplete, CancellationToken cancellationToken = default)
+        {
+            UniTask.Void(async () =>
+            {
+                await UniTask.WaitForSeconds(seconds, cancellationToken: cancellationToken);
+
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                onComplete.Invoke();
+            });
         }
     }
 }

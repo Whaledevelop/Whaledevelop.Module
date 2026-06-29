@@ -1,73 +1,87 @@
-﻿using System;
 using System.Collections.Generic;
-using System.Threading;
-using Cysharp.Threading.Tasks;
 using UnityEngine;
-using Whaledevelop.Services;
-using Object = UnityEngine.Object;
+using VContainer;
 
 namespace Whaledevelop.UI
 {
-    [CreateAssetMenu(menuName = "Whaledevelop/Services/UIService", fileName = "UIService")]
-    public class UIService : Service, IUIService
+    public abstract class UIService<TEnum> : SyncLifetime, IUIService<TEnum> where TEnum : struct
     {
-        [SerializeField]
-        private GameObject _canvasPrefab;
+        private readonly Dictionary<TEnum, UIViewRuntimeData> _viewRuntimeDatas = new();
 
-        [NonSerialized]
-        private RectTransform _canvasRectTransform;
+        private IObjectResolver _objectResolver;
 
-        private readonly Dictionary<IUIViewModel, UIView> _viewsModelsDict = new();
-
-        public RectTransform CanvasRectTransform => _canvasRectTransform;
-
-        public bool TryGetModel<T>(out T resultModel) where T : IUIViewModel
+        [Inject]
+        private void Construct(IObjectResolver objectResolver)
         {
-            foreach (var (model, _) in _viewsModelsDict)
+            _objectResolver = objectResolver;
+        }
+
+        protected abstract TView CreateView<TView>(TEnum code) where TView : IUIView;
+
+        protected abstract void DestroyView(TEnum code, IUIView view);
+
+        public bool TryGetModel<TModel>(TEnum code, out TModel viewModel) where TModel : IUIViewModel
+        {
+            if (_viewRuntimeDatas.TryGetValue(code, out var runtimeData) &&
+                runtimeData.TryGetModel(out TModel model))
             {
-                if (model is not T typedModel)
-                {
-                    continue;
-                }
-                resultModel = typedModel;
+                viewModel = model;
+
                 return true;
             }
-            resultModel = default;
+
+            viewModel = default;
+
             return false;
         }
 
-        public void OpenView(UIView viewPrefab, IUIViewModel viewModel)
+        public bool TryOpenView<TModel, TView>(TEnum code, TModel model) where TModel : IUIViewModel where TView : IUIView<TModel>
         {
-            if (_viewsModelsDict.ContainsKey(viewModel))
+            if (_viewRuntimeDatas.TryGetValue(code, out var runtimeData))
             {
-                Debug.Log("View already opened");
-                return;
+                Debug.Log($"Already opened {code}");
+
+                return false;
             }
-            var viewInstance = Object.Instantiate(viewPrefab, CanvasRectTransform);
-            viewInstance.Model = viewModel;
-            viewInstance.Initialize();
-            _viewsModelsDict.Add(viewModel, viewInstance);
+
+            _objectResolver.Inject(model);
+            model.Initialize();
+            var view = CreateView<TView>(code);
+            if (view == null)
+            {
+                Debug.LogError($"View creation failed for {code}");
+                model.Release();
+
+                return false;
+            }
+
+            view.Initialize(model);
+            runtimeData = new UIViewRuntimeData(view, model);
+            _viewRuntimeDatas.Add(code, runtimeData);
+
+            return true;
         }
 
-        public void CloseView(IUIViewModel viewModel)
+        public bool TryClose<TModel, TView>(TEnum code) where TModel : IUIViewModel where TView : IUIView<TModel>
         {
-            if (!_viewsModelsDict.TryGetValue(viewModel, out var viewInstance))
+            if (!_viewRuntimeDatas.TryGetValue(code, out var runtimeData))
             {
-                Debug.Log($"CloseView - no view instance for {viewModel.GetType()}");
-                return;
+                Debug.Log($"Already closed {code}");
+
+                return false;
             }
-            viewInstance.Release();
-            _viewsModelsDict.Remove(viewModel);
-            Object.Destroy(viewInstance.gameObject);
-        }
 
-        protected override UniTask OnInitializeAsync(CancellationToken cancellationToken)
-        {
-            var canvas = Object.Instantiate(_canvasPrefab);
-            Object.DontDestroyOnLoad(canvas);
-            _canvasRectTransform = canvas.GetComponent<RectTransform>();
+            runtimeData.View.Release();
 
-            return UniTask.CompletedTask;
+            if (runtimeData.TryGetModel(out TModel model))
+            {
+                model.Release();
+            }
+
+            DestroyView(code, runtimeData.View);
+            _viewRuntimeDatas.Remove(code);
+
+            return true;
         }
     }
 }

@@ -1,16 +1,27 @@
 ﻿using System;
 using System.Collections.Generic;
+using Sirenix.OdinInspector;
 using UnityEngine;
 
 namespace Whaledevelop.Utility
 {
     [Serializable]
-    public sealed partial class SerializableDictionary<TKey, TValue> : Dictionary<TKey, TValue>, ISerializationCallbackReceiver
+    public sealed class SerializableDictionary<TKey, TValue> : Dictionary<TKey, TValue>, ISerializationCallbackReceiver
     {
+        [Serializable]
+        private struct Entry
+        {
+            [field: SerializeField]
+            public TKey Key { get; set; }
+
+            [field: SerializeField]
+            public TValue Value { get; set; }
+        }
+        
         [HideInInspector]
         [SerializeField]
         private Entry[] _entries = Array.Empty<Entry>();
-
+        
         #region ISerializationCallbackReceiver
 
         void ISerializationCallbackReceiver.OnAfterDeserialize()

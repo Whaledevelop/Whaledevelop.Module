@@ -1,6 +1,6 @@
 ﻿namespace Whaledevelop.Services
 {
-    public interface IService : IInitializable
+    public interface IService : ILifetime
     {
     }
 }
